@@ -2,9 +2,9 @@ require('dotenv').config()
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const express = require('express');
 const cors = require('cors');
-
 const port = process.env.PORT || 3000;
-
+const stripe = require('stripe')(process.env.STRIPE_SECRET)
+const crypto = require('crypto')
 const app = express();
 app.use(cors())
 app.use(express())
@@ -12,7 +12,6 @@ app.use(express.json())
 
 
 const admin = require("firebase-admin");
-// const serviceAccount = require("./firebase-admin-key.json");
 
 const decoded = Buffer.from(process.env.FB_KEY, 'base64').toString('utf8')
 const serviceAccount = JSON.parse(decoded);
@@ -21,26 +20,29 @@ admin.initializeApp({
 });
 
 const verifyToken = async (req, res, next) => {
-  const token = req.headers.authorization.split(' ')[1];
-  console.log(token);
-  
+  const authHeader = req.headers.authorization;
 
-  if (!token) {
-    return res.status(401).send({ message: 'Unauthorize access' })
+  console.log('AUTH HEADER:', authHeader); // 👈 TEMP DEBUG
+
+  if (!authHeader) {
+    return res.status(401).send({ message: 'Unauthorized access: no token' });
   }
+
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2) {
+    return res.status(401).send({ message: 'Unauthorized access: bad format' });
+  }
+
+  const token = parts[1];
+
   try {
-    
-    const decoded = await admin.auth().verifyIdToken(token)
-    console.log("decoded Information", decoded);
+    const decoded = await admin.auth().verifyIdToken(token);
     req.decoded_email = decoded.email;
     next();
-
+  } catch (error) {
+    return res.status(401).send({ message: 'Unauthorized access: invalid token' });
   }
-  catch (error) {
-    return res.status(401).send({ message: 'Unauthorize access' })
-  }
-}
-
+};
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.sctb0kd.mongodb.net/?appName=Cluster0`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -71,6 +73,12 @@ async function run() {
       res.send(result);
     });
 
+    app.get('/users', verifyToken, async (req, res) => {
+      const result = await userCollections.find().toArray()
+      console.log(result);
+
+      res.send(result);
+    })
 
     app.post('/books', async (req, res) => {
       const bookInfo = req.body;
@@ -88,26 +96,37 @@ async function run() {
       // console.log(result)
       res.send(result)
     })
-    app.get('/books/:email', async (req, res) => {
+    app.get('/books/:email', verifyToken, async (req, res) => {
       const { email } = req.params
       const query = { email: email }
       const result = await booksCollections.find(query).toArray()
       //console.log(result)
       res.send(result)
     })
-    app.get('/orders/:email', async (req, res) => {
+    app.get('/orders/:email', verifyToken, async (req, res) => {
       const { email } = req.params
       const query = { email: email }
       const result = await ordersCollections.find(query).toArray()
       //console.log(result)
       res.send(result)
     })
-    app.get('/books', async (req, res) => {
-      const result = await booksCollections.find().toArray()
-      console.log(result)
+    app.get('/my-orders/:email', verifyToken, async (req, res) => {
+      const { email } = req.params
+      const query = { CustomerEmail: email }
+      const result = await ordersCollections.find(query).toArray()
+      //console.log(result)
       res.send(result)
     })
-    app.get('/books/id/:id', async (req, res) => {
+
+    app.get('/books', async (req, res) => {
+      const size = Number(req.query.size)
+      const page = Number(req.query.page)
+      const result = await booksCollections.find().limit(size).skip(size * page).toArray();
+      const totalRequest = await booksCollections.countDocuments();
+      // console.log(result)
+      res.send({ request: result, totalRequest })
+    })
+    app.get('/books/id/:id', verifyToken, async (req, res) => {
       const id = req.params.id;
       console.log(id)
       const query = { _id: new ObjectId(id) }; // Use _id and wrap the string in ObjectId
@@ -115,11 +134,38 @@ async function run() {
       res.send(result);
     });
 
-    app.post('/orders', async(req,res)=>{
+    app.post('/orders', verifyToken, async (req, res) => {
       const orderInfo = req.body;
       orderInfo.createdAt = new Date();
       const result = await ordersCollections.insertOne(orderInfo);
       res.send(result);
+    })
+
+    app.post(`/create-payment`, async (req, res) => {
+      const payAmount = parseInt(req.body.price)*100 ;
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: 'BDT',
+              product_data: {
+                name: req.body.customerName
+              },
+              unit_amount: payAmount
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        metadata: {
+          customer_name: req.body.customerName
+        },
+        customer_email: req.body.CustomerEmail,
+        success_url: `${process.env.SITE_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.SITE_DOMAIN}/payment-cancel`,
+      });
+
+      res.send({url: session.url})
     })
 
 
