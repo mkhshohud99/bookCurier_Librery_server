@@ -57,13 +57,14 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
     // Send a ping to confirm a successful connection
 
     const database = client.db('bookCurier_Library')
     const userCollections = database.collection('user')
     const booksCollections = database.collection('books')
     const ordersCollections = database.collection('orders')
+    const paymentsCollection = database.collection('payments')
 
     app.post('/users', async (req, res) => {
       const userInfo = req.body;
@@ -142,7 +143,7 @@ async function run() {
     })
 
     app.post(`/create-payment`, async (req, res) => {
-      const payAmount = parseInt(req.body.price)*100 ;
+      const payAmount = parseInt(req.body.price) * 100;
       const session = await stripe.checkout.sessions.create({
         line_items: [
           {
@@ -165,12 +166,35 @@ async function run() {
         cancel_url: `${process.env.SITE_DOMAIN}/payment-cancel`,
       });
 
-      res.send({url: session.url})
+      res.send({ url: session.url })
+    })
+
+    app.post('/success-payment', async (req, res) => {
+      const { session_id } = req.query;
+      const session = await stripe.checkout.sessions.retrieve(
+        session_id
+      );
+      console.log(session);
+      const transactionId = session.payment_intent;
+
+      if(session.payment_status=='paid'){
+        const paymentInfo = {
+          amount: session.amount_total/100,
+          currency: session.currency,
+          customerEmail: session.customer_email,
+          transactionId,
+          payment_status: session.payment_status,
+          paidAt: new Date()
+        }
+        const result = await paymentsCollection.insertOne(paymentInfo)
+        return res.send(result)
+      }
+      
     })
 
 
 
-    await client.db("admin").command({ ping: 1 });
+    //await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
