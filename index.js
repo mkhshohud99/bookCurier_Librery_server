@@ -81,7 +81,7 @@ async function run() {
       res.send(result);
     })
 
-    app.post('/books', async (req, res) => {
+    app.post('/books',verifyToken, async (req, res) => {
       const bookInfo = req.body;
       bookInfo.createdAt = new Date();
       const result = await booksCollections.insertOne(bookInfo);
@@ -104,6 +104,11 @@ async function run() {
       //console.log(result)
       res.send(result)
     })
+    app.get('/all-books', verifyToken, async (req, res) => {
+      const result = await booksCollections.find().toArray()
+      //console.log(result)
+      res.send(result)
+    })
     app.get('/orders/:email', verifyToken, async (req, res) => {
       const { email } = req.params
       const query = { email: email }
@@ -119,12 +124,12 @@ async function run() {
       res.send(result)
     })
 
-    app.get('/books', async (req, res) => {
+    app.get('/books',  async (req, res) => {
       const size = Number(req.query.size)
       const page = Number(req.query.page)
       const result = await booksCollections.find().limit(size).skip(size * page).toArray();
       const totalRequest = await booksCollections.countDocuments();
-      // console.log(result)
+      console.log(result)
       res.send({ request: result, totalRequest })
     })
     app.get('/books/id/:id', verifyToken, async (req, res) => {
@@ -142,7 +147,7 @@ async function run() {
       res.send(result);
     })
 
-    app.post(`/create-payment`, async (req, res) => {
+    app.post(`/create-payment`, verifyToken, async (req, res) => {
       const payAmount = parseInt(req.body.price) * 100;
       const session = await stripe.checkout.sessions.create({
         line_items: [
@@ -169,7 +174,7 @@ async function run() {
       res.send({ url: session.url })
     })
 
-    app.post('/success-payment', async (req, res) => {
+    app.post('/success-payment', verifyToken, async (req, res) => {
       const { session_id } = req.query;
       const session = await stripe.checkout.sessions.retrieve(
         session_id
