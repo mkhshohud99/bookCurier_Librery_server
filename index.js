@@ -104,9 +104,9 @@ async function run() {
       //console.log(result)
       res.send(result)
     })
-    app.get('/all-books', verifyToken, async (req, res) => {
+    app.get('/all-books', async (req, res) => {
       const result = await booksCollections.find().toArray()
-      //console.log(result)
+      console.log(result)
       res.send(result)
     })
     app.get('/orders/:email', verifyToken, async (req, res) => {
