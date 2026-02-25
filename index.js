@@ -81,7 +81,7 @@ async function run() {
       res.send(result);
     })
 
-    app.post('/books',verifyToken, async (req, res) => {
+    app.post('/books', verifyToken, async (req, res) => {
       const bookInfo = req.body;
       bookInfo.createdAt = new Date();
       const result = await booksCollections.insertOne(bookInfo);
@@ -104,11 +104,24 @@ async function run() {
       //console.log(result)
       res.send(result)
     })
+    
     app.get('/all-books', async (req, res) => {
-      const result = await booksCollections.find().toArray()
-      console.log(result)
-      res.send(result)
-    })
+
+      const search = req.query.search;
+      let query = {};
+
+      if (search) {
+        query = {
+          $or: [
+            { name: { $regex: search, $options: 'i' } },
+            // { author: { $regex: search, $options: 'i' } }
+          ]
+        }
+      }
+
+      const result = await booksCollections.find(query).toArray();
+      res.send(result);
+    });
     app.get('/orders/:email', verifyToken, async (req, res) => {
       const { email } = req.params
       const query = { email: email }
@@ -124,7 +137,7 @@ async function run() {
       res.send(result)
     })
 
-    app.get('/books',  async (req, res) => {
+    app.get('/books', async (req, res) => {
       const size = Number(req.query.size)
       const page = Number(req.query.page)
       const result = await booksCollections.find().limit(size).skip(size * page).toArray();
@@ -182,9 +195,9 @@ async function run() {
       console.log(session);
       const transactionId = session.payment_intent;
 
-      if(session.payment_status=='paid'){
+      if (session.payment_status == 'paid') {
         const paymentInfo = {
-          amount: session.amount_total/100,
+          amount: session.amount_total / 100,
           currency: session.currency,
           customerEmail: session.customer_email,
           transactionId,
@@ -194,7 +207,7 @@ async function run() {
         const result = await paymentsCollection.insertOne(paymentInfo)
         return res.send(result)
       }
-      
+
     })
 
 
